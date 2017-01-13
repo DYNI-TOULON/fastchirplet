@@ -36,9 +36,9 @@ class Chirplet:
 		# print(self._samplerate)
 		t = linspace(0,self.time_bin,int(self.samplerate*self.time_bin))
 		if(self.polynome_degree):
-			w=cos(2*pi*((self.max_frequency-min_frequency)/((self.polynome_degree+1)*self.time_bin**self.polynome_degree)*t**self.polynome_degree+min_frequency)*t)
+			w=cos(2*pi*((self.max_frequency-self.min_frequency)/((self.polynome_degree+1)*self.time_bin**self.polynome_degree)*t**self.polynome_degree+self.min_frequency)*t)
 		else:
-			w=cos(2*pi*((min_frequency*(self.max_frequency/min_frequency)**(t/self.time_bin)-min_frequency)*self.time_bin/log(self.max_frequency/min_frequency)))
+			w=cos(2*pi*((self.min_frequency*(self.max_frequency/self.min_frequency)**(t/self.time_bin)-self.min_frequency)*self.time_bin/log(self.max_frequency/self.min_frequency)))
 		
 		coeffs = w*hanning(len(t))**2
 
@@ -52,13 +52,21 @@ class Chirplet:
 
 
 def compute(input_signal,save=False,duration_last_chirplet=1.01,num_octaves=5,num_chirps_by_octave=10,polynome_degree=3,end_smoothing=0.001):
-
+	"""main function. Fast Chirplet Transform from a signal"""
 
 	data, samplerate = librosa.load(input_signal,sr=None)
+
+	size_data = len(data)
+
+	nearest_power_2 = 2**(size_data-1).bit_length()
+
+	data = np.lib.pad(data,(0,nearest_power_2-size_data),'constant',constant_values=0)
 
 	chirplets = init_chirplet_filter_bank(samplerate,duration_last_chirplet,num_octaves,num_chirps_by_octave,polynome_degree)
 
 	chirps = apply_filterbank(data,chirplets,end_smoothing)
+
+	chirps = resize_chirps(size_data,nearest_power_2,chirps)
 
 	if save:
 		if not os.path.exists("csv"):
@@ -66,6 +74,16 @@ def compute(input_signal,save=False,duration_last_chirplet=1.01,num_octaves=5,nu
 		np.savetxt("csv/"+os.path.basename(input_signal).split('.')[0]+'.csv',tab1, delimiter=",")
 
 	return chirps
+
+def resize_chirps(size_data,nearest_power_2,chirps):
+	size_chirps = len(chirps)
+	ratio = size_data/nearest_power_2
+	size = int(ratio*len(chirps[0]))
+
+	tabfinal = np.zeros((size_chirps,size))
+	for i in range(0,size_chirps):
+		tabfinal[i]=chirps[i][0:size]
+	return tabfinal
 
 def init_chirplet_filter_bank(samplerate,duration_last_chirplet,num_octaves,num_chirps_by_octave,p):
 	"""generate all the chirplets from a given sample rate"""
