@@ -10,7 +10,8 @@ from scipy.io.wavfile import read
 class Chirplet:
 
 	"""smallest time bin among the chirplet"""
-	global smallest_time_bins
+
+	global _time_bins
 
 	def __init__(self,samplerate,F0,F1,sigma,polynome_degree):
 
@@ -20,11 +21,11 @@ class Chirplet:
 		"""highest frequency where the chirplet is applied"""
 		self.max_frequency = F1
 
+		"""duration of the chirp"""
+		self.duration = sigma/10
+
 		"""samplerate of the signal"""
 		self.samplerate = samplerate
-
-		"""duration of the chirplet"""
-		self.time_bin = sigma/10
 
 		"""degree of the polynome to generate the coefficients of the chirplet"""
 		self.polynome_degree = polynome_degree
@@ -33,13 +34,22 @@ class Chirplet:
 		self.filter_coefficients = self.calcul_coefficients()
 
 
+
+	def _get_time_bins():
+		return Chirplet._time_bins
+
+	def _set_time_bins(value):
+		Chirplet._time_bins = value
+
+
 	def calcul_coefficients(self):
 		"""calculate coefficients for the chirplets"""
-		t = linspace(0,self.time_bin,int(self.samplerate*self.time_bin))
+		t = linspace(0,self.duration,int(self.samplerate*self.duration))
+
 		if(self.polynome_degree):
-			w=cos(2*pi*((self.max_frequency-self.min_frequency)/((self.polynome_degree+1)*self.time_bin**self.polynome_degree)*t**self.polynome_degree+self.min_frequency)*t)
+			w=cos(2*pi*((self.max_frequency-self.min_frequency)/((self.polynome_degree+1)*self.duration**self.polynome_degree)*t**self.polynome_degree+self.min_frequency)*t)
 		else:
-			w=cos(2*pi*((self.min_frequency*(self.max_frequency/self.min_frequency)**(t/self.time_bin)-self.min_frequency)*self.time_bin/log(self.max_frequency/self.min_frequency)))
+			w=cos(2*pi*((self.min_frequency*(self.max_frequency/self.min_frequency)**(t/self.duration)-self.min_frequency)*self.duration/log(self.max_frequency/self.min_frequency)))
 		
 		coeffs = w*hanning(len(t))**2
 
@@ -52,8 +62,18 @@ class Chirplet:
 		return fft_smoothing(fabs(new_up),end_smoothing)
 
 
-def compute(input_signal,save=False,duration_last_chirplet=0.45,num_octaves=4,num_chirps_by_octave=16,polynome_degree=3,end_smoothing=0.001,default_sample_rate=None,keep_path=False):
+def compute(input_signal,
+	save=False,
+	duration_last_chirplet=1,
+	num_octaves=5,
+	num_chirps_by_octave=10,
+	polynome_degree=0,
+	end_smoothing=0.001,
+	default_sample_rate=None,
+	save_path=None):
 	"""main function. Fast Chirplet Transform from a signal"""
+
+	Chirplet._set_time_bins(end_smoothing*10)
 
 	real_data, samplerate = librosa.load(input_signal,sr=default_sample_rate)
 
@@ -63,7 +83,11 @@ def compute(input_signal,save=False,duration_last_chirplet=0.45,num_octaves=4,nu
 
 	nearest_power_2 = 2**(size_data-1).bit_length()
 
+	while nearest_power_2 <= samplerate*duration_last_chirplet:
+		nearest_power_2*=2
+
 	data = np.lib.pad(real_data,(0,nearest_power_2-size_data),'constant',constant_values=0)
+	# data = real_data
 
 	chirplets = init_chirplet_filter_bank(samplerate,duration_last_chirplet,num_octaves,num_chirps_by_octave,polynome_degree)
 
@@ -72,42 +96,61 @@ def compute(input_signal,save=False,duration_last_chirplet=0.45,num_octaves=4,nu
 	chirps = resize_chirps(size_data,nearest_power_2,chirps)
 
 	if save:
-		save_chirp(input_signal,chirps,keep_path)
-		
+		save_chirp(input_signal,chirps,save_path)
+
 	return chirps
 
-def save_chirp(path_file,chirps,keep_path):
-	if not os.path.exists("pkl"):
-			os.makedirs("pkl")
-	if keep_path:
-		drive, path = os.path.splitdrive(path_file)
-		path, filename = os.path.split(path)
-		if not os.path.exists("pkl/"+path):
-			os.makedirs("pkl/"+path)   
-		print(path)
-		joblib.dump(chirps,'pkl/'+path+'/'+filename.split('.')[0]+'.pkl')
-	else:
-		joblib.dump(chirps,'pkl/'+os.path.basename(path_file).split('.')[0]+'.pkl')
-		#np.savetxt("csv/"+os.path.basename(path_file).split('.')[0]+'.csv',chirps, delimiter=",")
 
-def compute_folder(path_folder,save=True,duration_last_chirplet=0.45,num_octaves=4,num_chirps_by_octave=16,polynome_degree=3,end_smoothing=0.001,default_sample_rate=None,keep_path=True):
+def save_chirp(path_file,chirps,save_path):
+	"""save your chirp in the chosen directories"""
+	if save_path:
+		if not os.path.exists(save_path):
+			os.makedirs(save_path)   
+		joblib.dump(chirps,save_path+'/'+filename.split('.')[0]+'.jl')
+	else:
+		joblib.dump(chirps,path_file.split('.')[0]+'.jl')
+
+def compute_folder(path_folder,
+	save=True,
+	duration_last_chirplet=1,
+	num_octaves=5,
+	num_chirps_by_octave=10,
+	polynome_degree=3,
+	end_smoothing=0.001,
+	default_sample_rate=None,
+	save_path=None,
+	display_progress=False):
+
+	"""apply the compute function to the audio files in the given path"""
 
 	chirp_dict = dict()
-	wavfiles = []
+	audiofiles = []
 	for root, dirs, files in os.walk(path_folder):
 
 		for file in files:
 
 			if file.endswith(".wav"):
-				wavfiles.append(os.path.join(root, file))
+				audiofiles.append(os.path.join(root, file))
 
-	lenwavefile = len(wavfiles)
-	counter = 1
-	for file in wavfiles:
-		data = compute(file,save,duration_last_chirplet,num_octaves,num_chirps_by_octave,polynome_degree,end_smoothing,keep_path=keep_path,default_sample_rate=default_sample_rate)
+	lenwavefile = len(audiofiles)
+	if display_progress:
+		counter = 1
+	for file in audiofiles:
+
+		data = compute(file,
+			save=save,
+			duration_last_chirplet=duration_last_chirplet,
+			num_octaves=num_octaves,
+			num_chirps_by_octave=num_chirps_by_octave,
+			polynome_degree=polynome_degree,
+			end_smoothing=end_smoothing,
+			default_sample_rate=default_sample_rate,
+			save_path=save_path)
+
 		chirp_dict[file] = data
-		print(file,':',counter,'/',lenwavefile)
-		counter += 1
+		if display_progress:
+			print(file,':',counter,'/',lenwavefile)
+			counter += 1
 
 	return chirp_dict
 
@@ -122,7 +165,7 @@ def resize_chirps(size_data,nearest_power_2,chirps):
 		tabfinal[i]=chirps[i][0:size]
 	return tabfinal
 
-def init_chirplet_filter_bank(samplerate,duration_last_chirplet,num_octaves,num_chirps_by_octave,p):
+def init_chirplet_filter_bank(samplerate,duration_last_chirplet,num_octaves,num_chirps_by_octave,polynome_degree):
 	"""generate all the chirplets from a given sample rate"""
 
 	lambdas            = 2.0**(1+arange(num_octaves*num_chirps_by_octave)/float(num_chirps_by_octave))
@@ -131,11 +174,9 @@ def init_chirplet_filter_bank(samplerate,duration_last_chirplet,num_octaves,num_
 	#high frequencies for a signal
 	end_frequencies    = samplerate /lambdas
 	durations          = 2.0*duration_last_chirplet/flipud(lambdas)
-	Chirplet.smallest_time_bins = durations[0]
-	print(Chirplet.smallest_time_bins)
 	chirplets=list()
 	for f0,f1,duration in zip(start_frequencies,end_frequencies,durations):
-		chirplets.append(Chirplet(samplerate,f0,f1,duration,p))
+		chirplets.append(Chirplet(samplerate,f0,f1,duration,polynome_degree))
 	return chirplets
 
 def apply_filterbank(input_signal,chirplets,end_smoothing):
@@ -191,7 +232,7 @@ def fft_based(input_signal,h,boundary=0):
 		h=pad(h,(0,x.size-M),'constant',constant_values=0)
 		newx=ifft(fft(input_signal)*fft(h))
 		return newx[M-1:-1]
-	else:#peridic
+	else:#periodic
 		return real(roll(ifft(fft(input_signal)*fft(h,input_signal.size)),-half_size))
 
 
@@ -210,6 +251,7 @@ def build_fft(input_signal,filter_coefficients,n=2,boundary=0):
 	output=empty_like(input_signal)
 	#pad with 0 to have a size in a power of 2
 	windows_size = int(windows_size)
+	
 	zeropadding = pad(filter_coefficients,(0,windows_size-M),'constant',constant_values=0)
 
 	h_fft=fft(zeropadding)
@@ -230,16 +272,19 @@ def build_fft(input_signal,filter_coefficients,n=2,boundary=0):
 	else:
 		x_fft=fft(input_signal[:windows_size])
 
-	output[:windows_size-M]=ifft(x_fft*h_fft)[M-1:-1]
-	current_pos+=windows_size-M-half_size
+	output[:windows_size-M]=(ifft(x_fft*h_fft)[M-1:-1]).real
 
+	current_pos+=windows_size-M-half_size
+	countloop = 0
 	#apply fast fourier transofm to each windows 
 	while(current_pos+windows_size-half_size<=signal_size):
 		x_fft=fft(input_signal[current_pos-half_size:current_pos+windows_size-half_size])
-		output[current_pos:current_pos+windows_size-M]=real(ifft(x_fft*h_fft)[M-1:-1])
 
+		#Suppress the warning, work on the real/imagina
+		output[current_pos:current_pos+windows_size-M]=(ifft(x_fft*h_fft)[M-1:-1]).real
+		countloop+=1
 		current_pos+=windows_size-M
-
+	# print(countloop)
 	#apply fast fourier transform to the rest of the signal
 	if(windows_size-(signal_size-current_pos+half_size)<half_size):
 		window = input_signal[current_pos-half_size:]

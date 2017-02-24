@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import csv
 from pylab import *
@@ -20,20 +19,22 @@ def compute_spectrogram(signal, sample_rate):
     return [spectrum, freqs, times]
 
 def plotchirplet2(tab1,samplerate,name,root,audiopath):
-	figure, axarr = plt.subplots(2, sharex=False)
-
+	figure, axarr = plt.subplots(3, sharex=False)
 
 	tabfinal=list(reversed(tab1))
 	[spectrum, freqs, times] = compute_spectrogram(tab1, samplerate)
 	index_frequency = np.argmax(freqs)
 	mxf = freqs[index_frequency]
+	print(mxf)
 	data,sr = librosa.load(audiopath,sr=None)
+	print(len(data),sr)
 	[spectrum, freqs, times] = compute_spectrogram(data, sr)
 
 	axarr[0].matshow(tabfinal,
 			                          origin='lower',
-			                          extent=(0, times[-1],freqs[0], mxf),
+			                          extent=(0, times[-1], freqs[0], mxf),
 			                          aspect='auto')
+
 	axarr[0].axes.xaxis.set_ticks_position('bottom')
 	axarr[0].set_ylabel("Frequency in Hz")
 	axarr[0].xaxis.grid(which='major', color='Black',
@@ -42,11 +43,6 @@ def plotchirplet2(tab1,samplerate,name,root,audiopath):
 	                             linestyle='-', linewidth=0.25)
 
 	axarr[0].set_title('chirplet')
-
-
-
-
-
 
 	index_frequency = np.argmax(freqs)
 	max_frequency = freqs[index_frequency]
@@ -64,11 +60,27 @@ def plotchirplet2(tab1,samplerate,name,root,audiopath):
 
 	axarr[1].set_title('spectrogram')
 
+	time = np.linspace(0, len(data) / sr, num=len(data))
+	axarr[2].set_xlim([0, time[-1]])
+	axarr[2].plot(time, data)
+	
+	axarr[2].set_ylabel("Amplitude")
+
+
+	# axarr[2].matshow(data,
+	#                           origin='lower',
+	#                           extent=(times[0], times[-1],freqs[0], max_frequency),
+	#                           aspect='auto')
+	axarr[2].axes.xaxis.set_ticks_position('bottom')
+	axarr[2].set_ylabel("Intensity")
+	axarr[2].xaxis.grid(which='major', color='Black',
+	                             linestyle='-', linewidth=0.25)
+
 	figure.tight_layout()
 
 	if not os.path.exists(root):
 		os.makedirs(root)
-	figure.savefig(root+"/"+name+'.pdf')
+	figure.savefig(root+"/"+name+'.png')
 	close('all')
 
 # def save_chirp(path_file,chirps):
@@ -84,7 +96,7 @@ def main(path='.'):
 
 		for file in files:
 
-			if file.endswith(".pkl"):
+			if file.endswith("jl"):
 				pklfiles.append(os.path.join(root, file))
 	num_files = len(pklfiles)
 	for file in pklfiles:
@@ -93,9 +105,9 @@ def main(path='.'):
 		data = joblib.load(file)
 		#pathfile = os.path.join(file)
 		#save_chirp(file,output_up)
-		audiopath = file[:-3]+'wav'
+		audiopath = '/home/vtassan/git/generate_chirp/audio/corvus_corone.wav'
 		print(audiopath)
-		plotchirplet2(data,None,os.path.basename(file).split('.')[0],path+'/spectro/',audiopath)
+		plotchirplet2(data,16000,os.path.basename(file).split('.')[0],path+'/spectro/',audiopath)
 
 
 if __name__ == "__main__":
