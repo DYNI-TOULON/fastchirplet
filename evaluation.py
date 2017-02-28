@@ -34,7 +34,7 @@ def plotchirplet(tab1,audiopath):
 	index_frequency = np.argmax(freqs)
 	mxf = freqs[index_frequency]
 
-
+	print(freqs[0], mxf)
 
 	axarr[0].matshow(tabfinal,
 			                          origin='lower',
