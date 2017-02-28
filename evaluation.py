@@ -99,6 +99,7 @@ def main(pathfile):
 	for file in chirplet:
 		start_time = time.time()
 		chirps = ch.compute(file)
+		print(chirps)
 		joblib.dump(chirps,file[:-3]+'jl')
 		plotchirplet(chirps,file)
 		print("--- %s seconds ---" % (time.time() - start_time))
